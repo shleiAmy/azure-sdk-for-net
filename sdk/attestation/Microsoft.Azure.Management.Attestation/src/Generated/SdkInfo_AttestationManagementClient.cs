@@ -30,7 +30,7 @@ namespace Microsoft.Azure.Management.Attestation
       public static readonly String AutoRestCmdExecuted = "cmd.exe /c autorest.cmd https://github.com/Azure/azure-rest-api-specs/blob/master/specification/attestation/resource-manager/readme.md --csharp --version=latest --reflect-api-versions --csharp-sdks-folder=C:\\azure-sdk-for-net\\sdk";
       public static readonly String GithubForkName = "Azure";
       public static readonly String GithubBranchName = "master";
-      public static readonly String GithubCommidId = "76c353d92b8037fe1e02c36deeb06d78d284e5d7";
+      public static readonly String GithubCommidId = "864e09fad28d69f624950e2b9d0c9f8fa7fb5ec8";
       public static readonly String CodeGenerationErrors = "";
       public static readonly String GithubRepoName = "azure-rest-api-specs";
       // END: Code Generation Metadata Section

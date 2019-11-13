@@ -8,7 +8,7 @@
 // regenerated.
 // </auto-generated>
 
-namespace Microsoft.Azure.Management.Attestation
+namespace Microsoft.Azure.Attestation
 {
     using Microsoft.Rest;
     using Microsoft.Rest.Azure;
@@ -19,18 +19,21 @@ namespace Microsoft.Azure.Management.Attestation
     using System.Threading.Tasks;
 
     /// <summary>
-    /// AttestationProvidersOperations operations.
+    /// PolicyOperations operations.
     /// </summary>
-    public partial interface IAttestationProvidersOperations
+    public partial interface IPolicyOperations
     {
         /// <summary>
-        /// Get the status of Attestation Provider.
+        /// Accepts a new policy document and returns a JWT which expresses
+        /// used in preparation to set attestation policy.
         /// </summary>
-        /// <param name='resourceGroupName'>
-        /// The name of the resource group. The name is case insensitive.
+        /// <param name='tee'>
+        /// Specifies the trusted execution environment to be used to validate
+        /// the evidence. Possible values include: 'SgxEnclave', 'OpenEnclave',
+        /// 'CyResComponent', 'AzureGuest'
         /// </param>
-        /// <param name='providerName'>
-        /// Name of the attestation service instance
+        /// <param name='policyJws'>
+        /// JSON Web Signature (See RFC7515) expressing the new policy
         /// </param>
         /// <param name='customHeaders'>
         /// The headers that will be added to request.
@@ -47,18 +50,14 @@ namespace Microsoft.Azure.Management.Attestation
         /// <exception cref="Microsoft.Rest.ValidationException">
         /// Thrown when a required parameter is null
         /// </exception>
-        Task<AzureOperationResponse<AttestationProvider>> GetWithHttpMessagesAsync(string resourceGroupName, string providerName, Dictionary<string, List<string>> customHeaders = null, CancellationToken cancellationToken = default(CancellationToken));
+        Task<AzureOperationResponse<object>> PrepareToSetWithHttpMessagesAsync(string tee, string policyJws, Dictionary<string, List<string>> customHeaders = null, CancellationToken cancellationToken = default(CancellationToken));
         /// <summary>
-        /// Creates or updates the Attestation Provider.
+        /// Retrieves the current policy for a given kind of TEE.
         /// </summary>
-        /// <param name='resourceGroupName'>
-        /// The name of the resource group. The name is case insensitive.
-        /// </param>
-        /// <param name='providerName'>
-        /// Name of the attestation service
-        /// </param>
-        /// <param name='creationParams'>
-        /// Client supplied parameters.
+        /// <param name='tee'>
+        /// Specifies the trusted execution environment to be used to validate
+        /// the evidence. Possible values include: 'SgxEnclave', 'OpenEnclave',
+        /// 'CyResComponent', 'AzureGuest'
         /// </param>
         /// <param name='customHeaders'>
         /// The headers that will be added to request.
@@ -75,53 +74,17 @@ namespace Microsoft.Azure.Management.Attestation
         /// <exception cref="Microsoft.Rest.ValidationException">
         /// Thrown when a required parameter is null
         /// </exception>
-        Task<AzureOperationResponse<AttestationProvider>> CreateWithHttpMessagesAsync(string resourceGroupName, string providerName, AttestationServiceCreationParams creationParams = default(AttestationServiceCreationParams), Dictionary<string, List<string>> customHeaders = null, CancellationToken cancellationToken = default(CancellationToken));
+        Task<AzureOperationResponse<object>> GetWithHttpMessagesAsync(string tee, Dictionary<string, List<string>> customHeaders = null, CancellationToken cancellationToken = default(CancellationToken));
         /// <summary>
-        /// Delete Attestation Service.
+        /// Sets the policy for a given kind of TEE.
         /// </summary>
-        /// <param name='resourceGroupName'>
-        /// The name of the resource group. The name is case insensitive.
+        /// <param name='tee'>
+        /// Specifies the trusted execution environment to be used to validate
+        /// the evidence. Possible values include: 'SgxEnclave', 'OpenEnclave',
+        /// 'CyResComponent', 'AzureGuest'
         /// </param>
-        /// <param name='providerName'>
-        /// Name of the attestation service
-        /// </param>
-        /// <param name='customHeaders'>
-        /// The headers that will be added to request.
-        /// </param>
-        /// <param name='cancellationToken'>
-        /// The cancellation token.
-        /// </param>
-        /// <exception cref="Microsoft.Rest.Azure.CloudException">
-        /// Thrown when the operation returned an invalid status code
-        /// </exception>
-        /// <exception cref="Microsoft.Rest.ValidationException">
-        /// Thrown when a required parameter is null
-        /// </exception>
-        Task<AzureOperationResponse> DeleteWithHttpMessagesAsync(string resourceGroupName, string providerName, Dictionary<string, List<string>> customHeaders = null, CancellationToken cancellationToken = default(CancellationToken));
-        /// <summary>
-        /// Returns a list of attestation providers in a subscription.
-        /// </summary>
-        /// <param name='customHeaders'>
-        /// The headers that will be added to request.
-        /// </param>
-        /// <param name='cancellationToken'>
-        /// The cancellation token.
-        /// </param>
-        /// <exception cref="Microsoft.Rest.Azure.CloudException">
-        /// Thrown when the operation returned an invalid status code
-        /// </exception>
-        /// <exception cref="Microsoft.Rest.SerializationException">
-        /// Thrown when unable to deserialize the response
-        /// </exception>
-        /// <exception cref="Microsoft.Rest.ValidationException">
-        /// Thrown when a required parameter is null
-        /// </exception>
-        Task<AzureOperationResponse<AttestationProviderListResult>> ListWithHttpMessagesAsync(Dictionary<string, List<string>> customHeaders = null, CancellationToken cancellationToken = default(CancellationToken));
-        /// <summary>
-        /// Returns attestation providers list in a resource group.
-        /// </summary>
-        /// <param name='resourceGroupName'>
-        /// The name of the resource group. The name is case insensitive.
+        /// <param name='newAttestationPolicy'>
+        /// JWT Expressing the new policy
         /// </param>
         /// <param name='customHeaders'>
         /// The headers that will be added to request.
@@ -138,6 +101,34 @@ namespace Microsoft.Azure.Management.Attestation
         /// <exception cref="Microsoft.Rest.ValidationException">
         /// Thrown when a required parameter is null
         /// </exception>
-        Task<AzureOperationResponse<AttestationProviderListResult>> ListByResourceGroupWithHttpMessagesAsync(string resourceGroupName, Dictionary<string, List<string>> customHeaders = null, CancellationToken cancellationToken = default(CancellationToken));
+        Task<AzureOperationResponse<object>> SetWithHttpMessagesAsync(string tee, string newAttestationPolicy, Dictionary<string, List<string>> customHeaders = null, CancellationToken cancellationToken = default(CancellationToken));
+        /// <summary>
+        /// Deletes the attestation policy for the specified tenant and reverts
+        /// to the default policy.
+        /// </summary>
+        /// <param name='tee'>
+        /// Specifies the trusted execution environment to be used to validate
+        /// the evidence. Possible values include: 'SgxEnclave', 'OpenEnclave',
+        /// 'CyResComponent', 'AzureGuest'
+        /// </param>
+        /// <param name='policyJws'>
+        /// JSON Web Signature with an empty policy document
+        /// </param>
+        /// <param name='customHeaders'>
+        /// The headers that will be added to request.
+        /// </param>
+        /// <param name='cancellationToken'>
+        /// The cancellation token.
+        /// </param>
+        /// <exception cref="Microsoft.Rest.Azure.CloudException">
+        /// Thrown when the operation returned an invalid status code
+        /// </exception>
+        /// <exception cref="Microsoft.Rest.SerializationException">
+        /// Thrown when unable to deserialize the response
+        /// </exception>
+        /// <exception cref="Microsoft.Rest.ValidationException">
+        /// Thrown when a required parameter is null
+        /// </exception>
+        Task<AzureOperationResponse<object>> DeleteWithHttpMessagesAsync(string tee, string policyJws, Dictionary<string, List<string>> customHeaders = null, CancellationToken cancellationToken = default(CancellationToken));
     }
 }

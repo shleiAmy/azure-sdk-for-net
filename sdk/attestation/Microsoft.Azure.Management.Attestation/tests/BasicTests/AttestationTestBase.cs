@@ -39,6 +39,15 @@ namespace Attestation.Management.ScenarioTests
 
         public string attestationPolicy { get; internal set; }
 
+        public Uri ResourceProviderHost
+        {
+            get
+            {
+                return client.BaseUri;
+            }
+            set { client.BaseUri = value; }
+        }
+
         public AttestationTestBase(MockContext context)
         {
             var testEnv = TestEnvironmentFactory.GetTestEnvironment();
