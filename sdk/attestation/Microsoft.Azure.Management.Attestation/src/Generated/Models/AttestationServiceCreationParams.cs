@@ -32,14 +32,9 @@ namespace Microsoft.Azure.Management.Attestation.Models
         /// class.
         /// </summary>
         /// <param name="attestationPolicy">Name of attestation policy.</param>
-        /// <param name="policySigningCertificates">JSON Web Key Set defining a
-        /// set of X.509 Certificates that will represent the parent
-        /// certificate for the signing certificate used for policy
-        /// operations</param>
-        public AttestationServiceCreationParams(string attestationPolicy = default(string), JSONWebKeySet policySigningCertificates = default(JSONWebKeySet))
+        public AttestationServiceCreationParams(string attestationPolicy = default(string))
         {
             AttestationPolicy = attestationPolicy;
-            PolicySigningCertificates = policySigningCertificates;
             CustomInit();
         }
 
@@ -53,14 +48,6 @@ namespace Microsoft.Azure.Management.Attestation.Models
         /// </summary>
         [JsonProperty(PropertyName = "attestationPolicy")]
         public string AttestationPolicy { get; set; }
-
-        /// <summary>
-        /// Gets or sets JSON Web Key Set defining a set of X.509 Certificates
-        /// that will represent the parent certificate for the signing
-        /// certificate used for policy operations
-        /// </summary>
-        [JsonProperty(PropertyName = "policySigningCertificates")]
-        public JSONWebKeySet PolicySigningCertificates { get; set; }
 
     }
 }
