@@ -8,7 +8,7 @@ using Azure.Core.Pipeline;
 namespace Azure.Data.AppConfiguration
 {
     /// <summary>
-    /// Options that allow to configure the management of the request sent to the service
+    /// Options that allow users to configure the requests sent to the App Configuration service.
     /// </summary>
     public class ConfigurationClientOptions : ClientOptions
     {
@@ -18,13 +18,13 @@ namespace Azure.Data.AppConfiguration
         internal const ServiceVersion LatestVersion = ServiceVersion.V1_0;
 
         /// <summary>
-        /// The versions of App Config Service supported by this client library.
+        /// The versions of the App Configuration service supported by this client library.
         /// </summary>
         public enum ServiceVersion
         {
 #pragma warning disable CA1707 // Identifiers should not contain underscores
             /// <summary>
-            /// Uses the latest service version
+            /// Version 1.0.
             /// </summary>
             V1_0 = 0
 #pragma warning restore CA1707 // Identifiers should not contain underscores

@@ -102,13 +102,11 @@ namespace Azure.Storage.Files.DataLake.Models
         /// </summary>
         public static FileSystemItem FileSystemItem(
             string name,
-            FileSystemProperties properties,
-            IDictionary<string, string> metadata)
+            FileSystemProperties properties)
             => new FileSystemItem()
             {
                 Name = name,
-                Properties = properties,
-                Metadata = metadata
+                Properties = properties
             };
         #endregion FileSystemItem
 
@@ -163,14 +161,14 @@ namespace Azure.Storage.Files.DataLake.Models
         public static PathAccessControl PathAccessControl(
             string owner,
             string group,
-            string permissions,
-            string acl)
+            PathPermissions permissions,
+            IList<PathAccessControlItem> acl)
             => new PathAccessControl()
             {
                 Owner = owner,
                 Group = group,
                 Permissions = permissions,
-                Acl = acl
+                AccessControlList = acl
             };
         #endregion PathAccessControl
 
@@ -284,9 +282,9 @@ namespace Azure.Storage.Files.DataLake.Models
             string contentType,
             ETag eTag,
             byte[] contentHash,
-            IEnumerable<string> contentEncoding,
+            string contentEncoding,
             string contentDisposition,
-            IEnumerable<string> contentLanguage,
+            string contentLanguage,
             string cacheControl,
             string acceptRanges,
             bool isServerEncrypted,
@@ -325,20 +323,6 @@ namespace Azure.Storage.Files.DataLake.Models
                 AccessTierChangedOn = accessTierChangeTime
             };
         #endregion PathProperties
-
-        #region PathSegment
-        /// <summary>
-        /// Creates a new PathSegment instance for mocking.
-        /// </summary>
-        public static PathSegment PathSegment(
-            string continuation,
-            IEnumerable<PathItem> paths)
-            => new PathSegment()
-            {
-                Continuation = continuation,
-                Paths = paths
-            };
-        #endregion PathSegment
 
         #region UserDelegationKey
         /// <summary>

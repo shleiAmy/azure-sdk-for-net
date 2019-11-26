@@ -6,7 +6,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Azure.Messaging.EventHubs.Core;
+using Azure.Messaging.EventHubs.Metadata;
 using Azure.Messaging.EventHubs.Processor;
+using Azure.Messaging.EventHubs.Samples.Infrastructure;
 
 namespace Azure.Messaging.EventHubs.Tests
 {
@@ -17,10 +20,18 @@ namespace Azure.Messaging.EventHubs.Tests
     internal class EventProcessorManager
     {
         /// <summary>
-        ///   A factory used to create partition processors.
+        ///   The fully qualified Event Hubs namespace that the processor is associated with.  This is likely
+        ///   to be similar to <c>{yournamespace}.servicebus.windows.net</c>.
         /// </summary>
         ///
-        private Func<PartitionContext, PartitionProcessor> PartitionProcessorFactory { get; }
+        public string FullyQualifiedNamespace { get; }
+
+        /// <summary>
+        ///   The name of the Event Hub that the processor is connected to, specific to the
+        ///   Event Hubs namespace that contains it.
+        /// </summary>
+        ///
+        public string EventHubName { get; }
 
         /// <summary>
         ///   The name of the consumer group the event processors are associated with.  Events will be
@@ -30,10 +41,10 @@ namespace Azure.Messaging.EventHubs.Tests
         private string ConsumerGroup { get; }
 
         /// <summary>
-        ///   The client used to interact with the Azure Event Hubs service.
+        ///   A factory used to provide new <see cref="EventHubConnection" /> instances.
         /// </summary>
         ///
-        private EventHubClient InnerClient { get; }
+        private Func<EventHubConnection> ConnectionFactory { get; }
 
         /// <summary>
         ///   The partition manager shared by all event processors in this hub.
@@ -45,61 +56,84 @@ namespace Azure.Messaging.EventHubs.Tests
         ///   The set of options to use for the event processors.
         /// </summary>
         ///
-        private EventProcessorOptions Options { get; }
+        private EventProcessorClientOptions ClientOptions { get; }
 
         /// <summary>
         ///   The event processors managed by this hub.
         /// </summary>
         ///
-        private List<EventProcessor<PartitionProcessor>> EventProcessors { get; }
+        private List<EventProcessorClient> EventProcessors { get; }
+
+        /// <summary>
+        ///   A callback action to be called on <see cref="EventProcessorClient.PartitionInitializingAsync" />.
+        /// </summary>
+        ///
+        private Action<PartitionInitializingEventArgs> OnInitialize { get; }
+
+        /// <summary>
+        ///   A callback action to be called on <see cref="EventProcessorClient.PartitionClosingAsync" />.
+        /// </summary>
+        ///
+        private Action<PartitionClosingEventArgs> OnStop { get; }
+
+        /// <summary>
+        ///   A callback action to be called on <see cref="EventProcessorClient.ProcessEventAsync" />.
+        /// </summary>
+        ///
+        private Action<ProcessEventArgs> OnProcessEvent { get; }
+
+        /// <summary>
+        ///   A callback action to be called on <see cref="EventProcessorClient.ProcessErrorAsync" />.
+        /// </summary>
+        ///
+        private Action<ProcessErrorEventArgs> OnProcessError { get; }
 
         /// <summary>
         ///   Initializes a new instance of the <see cref="EventProcessorManager"/> class.
         /// </summary>
         ///
         /// <param name="consumerGroup">The name of the consumer group the event processors are associated with.  Events are read in the context of this group.</param>
-        /// <param name="client">The client used to interact with the Azure Event Hubs service.</param>
+        /// <param name="connectionString">TODO.</param>
         /// <param name="partitionManager">Interacts with the storage system with responsibility for creation of checkpoints and for ownership claim.</param>
-        /// <param name="options">The set of options to use for the event processors.</param>
-        /// <param name="onInitialize">A callback action to be called on <see cref="PartitionProcessor.InitializeAsync" />.</param>
-        /// <param name="onClose">A callback action to be called on <see cref="PartitionProcessor.CloseAsync" />.</param>
-        /// <param name="onProcessEvents">A callback action to be called on <see cref="PartitionProcessor.ProcessEventsAsync" />.</param>
-        /// <param name="onProcessError">A callback action to be called on <see cref="PartitionProcessor.ProcessErrorAsync" />.</param>
+        /// <param name="clientOptions">The set of options to use for the event processors.</param>
+        /// <param name="onInitialize">A callback action to be called on <see cref="EventProcessorClient.PartitionInitializingAsync" />.</param>
+        /// <param name="onStop">A callback action to be called on <see cref="EventProcessorClient.PartitionClosingAsync" />.</param>
+        /// <param name="onProcessEvent">A callback action to be called on <see cref="EventProcessorClient.ProcessEventAsync" />.</param>
+        /// <param name="onProcessError">A callback action to be called on <see cref="EventProcessorClient.ProcessErrorAsync" />.</param>
         ///
         public EventProcessorManager(string consumerGroup,
-                                     EventHubClient client,
+                                     string connectionString,
                                      PartitionManager partitionManager = null,
-                                     EventProcessorOptions options = null,
-                                     Action<PartitionContext> onInitialize = null,
-                                     Action<PartitionContext, PartitionProcessorCloseReason> onClose = null,
-                                     Action<PartitionContext, IEnumerable<EventData>, CancellationToken> onProcessEvents = null,
-                                     Action<PartitionContext, Exception, CancellationToken> onProcessError = null)
+                                     EventProcessorClientOptions clientOptions = null,
+                                     Action<PartitionInitializingEventArgs> onInitialize = null,
+                                     Action<PartitionClosingEventArgs> onStop = null,
+                                     Action<ProcessEventArgs> onProcessEvent = null,
+                                     Action<ProcessErrorEventArgs> onProcessError = null)
         {
+            ConnectionStringProperties connectionStringProperties = ConnectionStringParser.Parse(connectionString);
+
+            FullyQualifiedNamespace = connectionStringProperties.Endpoint.Host;
+            EventHubName = connectionStringProperties.EventHubName;
             ConsumerGroup = consumerGroup;
-            InnerClient = client;
+            ConnectionFactory = () => new EventHubConnection(connectionString);
+            InnerPartitionManager = partitionManager ?? new MockCheckPointStorage();
 
-            PartitionProcessorFactory = partitionContext =>
-                new PartitionProcessor
-                (
-                    onInitialize,
-                    onClose,
-                    onProcessEvents,
-                    onProcessError
-                );
-
-            InnerPartitionManager = partitionManager ?? new InMemoryPartitionManager();
-
-            // In case it has not been specified, set the maximum receive wait time to 2 seconds because the default
+            // In case it has not been specified, set the maximum wait time to 2 seconds because the default
             // value (1 minute) would take too much time.
 
-            Options = options?.Clone() ?? new EventProcessorOptions();
+            ClientOptions = clientOptions?.Clone() ?? new EventProcessorClientOptions();
 
-            if (Options.MaximumReceiveWaitTime == null)
+            if (ClientOptions.MaximumWaitTime == null)
             {
-                Options.MaximumReceiveWaitTime = TimeSpan.FromSeconds(2);
+                ClientOptions.MaximumWaitTime = TimeSpan.FromSeconds(2);
             }
 
-            EventProcessors = new List<EventProcessor<PartitionProcessor>>();
+            OnInitialize = onInitialize;
+            OnStop = onStop;
+            OnProcessEvent = onProcessEvent;
+            OnProcessError = onProcessError;
+
+            EventProcessors = new List<EventProcessorClient>();
         }
 
         /// <summary>
@@ -112,14 +146,47 @@ namespace Azure.Messaging.EventHubs.Tests
         {
             for (int i = 0; i < amount; i++)
             {
-                EventProcessors.Add(new ShortWaitTimeMock
+                var eventProcessor = new ShortWaitTimeMock
                     (
-                        ConsumerGroup,
-                        InnerClient,
-                        PartitionProcessorFactory,
                         InnerPartitionManager,
-                        Options
-                    ));
+                        ConsumerGroup,
+                        FullyQualifiedNamespace,
+                        EventHubName,
+                        ConnectionFactory,
+                        ClientOptions
+                    );
+
+                if (OnInitialize != null)
+                {
+                    eventProcessor.PartitionInitializingAsync += eventArgs =>
+                    {
+                        OnInitialize(eventArgs);
+                        return Task.CompletedTask;
+                    };
+                }
+
+                if (OnStop != null)
+                {
+                    eventProcessor.PartitionClosingAsync += eventArgs =>
+                    {
+                        OnStop(eventArgs);
+                        return Task.CompletedTask;
+                    };
+                }
+
+                eventProcessor.ProcessEventAsync += eventArgs =>
+                {
+                    OnProcessEvent?.Invoke(eventArgs);
+                    return Task.CompletedTask;
+                };
+
+                eventProcessor.ProcessErrorAsync += eventArgs =>
+                {
+                    OnProcessError?.Invoke(eventArgs);
+                    return Task.CompletedTask;
+                };
+
+                EventProcessors.Add(eventProcessor);
             }
         }
 
@@ -127,32 +194,26 @@ namespace Azure.Messaging.EventHubs.Tests
         ///   Starts the event processors.
         /// </summary>
         ///
-        /// <returns>A task to be resolved on when the operation has completed.</returns>
-        ///
         public Task StartAllAsync()
         {
             return Task.WhenAll(EventProcessors
-                .Select(eventProcessor => eventProcessor.StartAsync()));
+                .Select(eventProcessor => eventProcessor.StartProcessingAsync()));
         }
 
         /// <summary>
         ///   Stops the event processors.
         /// </summary>
         ///
-        /// <returns>A task to be resolved on when the operation has completed.</returns>
-        ///
         public Task StopAllAsync()
         {
             return Task.WhenAll(EventProcessors
-                .Select(eventProcessor => eventProcessor.StopAsync()));
+                .Select(eventProcessor => eventProcessor.StopProcessingAsync()));
         }
 
         /// <summary>
         ///   Waits until the partition load distribution is stabilized.  Throws an <see cref="OperationCanceledException"/>
         ///   if the load takes too long to stabilize.
         /// </summary>
-        ///
-        /// <returns>A task to be resolved on when the operation has completed.</returns>
         ///
         public async Task WaitStabilization()
         {
@@ -167,9 +228,9 @@ namespace Azure.Messaging.EventHubs.Tests
                 // Remember to filter expired ownership.
 
                 var activeOwnership = (await InnerPartitionManager
-                    .ListOwnershipAsync(InnerClient.FullyQualifiedNamespace, InnerClient.EventHubName, ConsumerGroup)
+                    .ListOwnershipAsync(FullyQualifiedNamespace, EventHubName, ConsumerGroup)
                     .ConfigureAwait(false))
-                    .Where(ownership => DateTimeOffset.UtcNow.Subtract(ownership.LastModifiedTime.Value) < ShortWaitTimeMock.s_shortOwnershipExpiration)
+                    .Where(ownership => DateTimeOffset.UtcNow.Subtract(ownership.LastModifiedTime.Value) < ShortWaitTimeMock.ShortOwnershipExpiration)
                     .ToList();
 
                 // Increment stabilized status count if current partition distribution matches the previous one.  Reset it
@@ -190,7 +251,7 @@ namespace Azure.Messaging.EventHubs.Tests
                 {
                     // Wait a load balance update cycle before the next verification.  Give up if the whole process takes more than 1 minute.
 
-                    await Task.Delay(ShortWaitTimeMock.s_shortLoadBalanceUpdate, timeoutToken);
+                    await Task.Delay(ShortWaitTimeMock.ShortLoadBalanceUpdate, timeoutToken);
                 }
                 else
                 {
@@ -212,7 +273,7 @@ namespace Azure.Messaging.EventHubs.Tests
         /// <returns><c>true</c>, if there are no owner changes between distributions; otherwise, <c>false</c>.</returns>
         ///
         /// <remarks>
-        ///   Filtering expired ownership is assumed to be responsability of the caller.
+        ///   Filtering expired ownership is assumed to be responsibility of the caller.
         /// </remarks>
         ///
         private bool AreOwnershipDistributionsTheSame(IEnumerable<PartitionOwnership> first,
@@ -264,170 +325,47 @@ namespace Azure.Messaging.EventHubs.Tests
         }
 
         /// <summary>
-        ///   A test helper class derived from <see cref="BasePartitionProcessor" />.
-        /// </summary>
-        ///
-        private class PartitionProcessor : BasePartitionProcessor
-        {
-            /// <summary>
-            ///   A callback action to be called on <see cref="InitializeAsync" />.
-            /// </summary>
-            ///
-            private Action<PartitionContext> OnInitialize { get; }
-
-            /// <summary>
-            ///   A callback action to be called on <see cref="CloseAsync" />.
-            /// </summary>
-            ///
-            private Action<PartitionContext, PartitionProcessorCloseReason> OnClose { get; }
-
-            /// <summary>
-            ///   A callback action to be called on <see cref="ProcessEventsAsync" />.
-            /// </summary>
-            ///
-            private Action<PartitionContext, IEnumerable<EventData>, CancellationToken> OnProcessEvents { get; }
-
-            /// <summary>
-            ///   A callback action to be called on <see cref="ProcessErrorAsync" />.
-            /// </summary>
-            ///
-            private Action<PartitionContext, Exception, CancellationToken> OnProcessError { get; }
-
-            /// <summary>
-            ///   Initializes a new instance of the <see cref="PartitionProcessor"/> class.
-            /// </summary>
-            ///
-            public PartitionProcessor()
-            {
-            }
-
-            /// <summary>
-            ///   Initializes a new instance of the <see cref="PartitionProcessor"/> class.
-            /// </summary>
-            ///
-            /// <param name="onInitialize">A callback action to be called on <see cref="InitializeAsync" />.</param>
-            /// <param name="onClose">A callback action to be called on <see cref="CloseAsync" />.</param>
-            /// <param name="onProcessEvents">A callback action to be called on <see cref="ProcessEventsAsync" />.</param>
-            /// <param name="onProcessError">A callback action to be called on <see cref="ProcessErrorAsync" />.</param>
-            ///
-            public PartitionProcessor(Action<PartitionContext> onInitialize = null,
-                                      Action<PartitionContext, PartitionProcessorCloseReason> onClose = null,
-                                      Action<PartitionContext, IEnumerable<EventData>, CancellationToken> onProcessEvents = null,
-                                      Action<PartitionContext, Exception, CancellationToken> onProcessError = null)
-            {
-                OnInitialize = onInitialize;
-                OnClose = onClose;
-                OnProcessEvents = onProcessEvents;
-                OnProcessError = onProcessError;
-            }
-
-            /// <summary>
-            ///   Initializes the partition processor.
-            /// </summary>
-            ///
-            /// <param name="partitionContext">Contains information about the partition from which events are sourced and provides a means of creating checkpoints for that partition.</param>
-            ///
-            /// <returns>A task to be resolved on when the operation has completed.</returns>
-            ///
-            public override Task InitializeAsync(PartitionContext partitionContext)
-            {
-                OnInitialize?.Invoke(partitionContext);
-                return Task.CompletedTask;
-            }
-
-            /// <summary>
-            ///   Closes the partition processor.
-            /// </summary>
-            ///
-            /// <param name="partitionContext">Contains information about the partition from which events are sourced and provides a means of creating checkpoints for that partition.</param>
-            /// <param name="reason">The reason why the partition processor is being closed.</param>
-            ///
-            /// <returns>A task to be resolved on when the operation has completed.</returns>
-            ///
-            public override Task CloseAsync(PartitionContext partitionContext,
-                                            PartitionProcessorCloseReason reason)
-            {
-                OnClose?.Invoke(partitionContext, reason);
-                return Task.CompletedTask;
-            }
-
-            /// <summary>
-            ///   Processes a set of received <see cref="EventData" />.
-            /// </summary>
-            ///
-            /// <param name="partitionContext">Contains information about the partition from which events are sourced and provides a means of creating checkpoints for that partition.</param>
-            /// <param name="events">The received events to be processed.</param>
-            /// <param name="cancellationToken">A <see cref="CancellationToken"/> instance to signal the request to cancel the operation.</param>
-            ///
-            /// <returns>A task to be resolved on when the operation has completed.</returns>
-            ///
-            public override Task ProcessEventsAsync(PartitionContext partitionContext,
-                                                    IEnumerable<EventData> events,
-                                                    CancellationToken cancellationToken)
-            {
-                OnProcessEvents?.Invoke(partitionContext, events, cancellationToken);
-                return Task.CompletedTask;
-            }
-
-            /// <summary>
-            ///   Processes an unexpected exception thrown while the associated <see cref="EventProcessor{T}" /> is running.
-            /// </summary>
-            ///
-            /// <param name="partitionContext">Contains information about the partition from which events are sourced and provides a means of creating checkpoints for that partition.</param>
-            /// <param name="exception">The exception to be processed.</param>
-            /// <param name="cancellationToken">A <see cref="CancellationToken"/> instance to signal the request to cancel the operation.</param>
-            ///
-            /// <returns>A task to be resolved on when the operation has completed.</returns>
-            ///
-            public override Task ProcessErrorAsync(PartitionContext partitionContext,
-                                                   Exception exception,
-                                                   CancellationToken cancellationToken)
-            {
-                OnProcessError?.Invoke(partitionContext, exception, cancellationToken);
-                return Task.CompletedTask;
-            }
-        }
-
-        /// <summary>
-        ///   Allows the load balance update and ownership expiration time spans to be overriden
+        ///   Allows the load balance update and ownership expiration time spans to be overridden
         ///   for testing purposes.
         /// </summary>
         ///
-        private class ShortWaitTimeMock : EventProcessor<PartitionProcessor>
+        private class ShortWaitTimeMock : EventProcessorClient
         {
             /// <summary>A value used to override event processors' load balance update time span.</summary>
-            public static readonly TimeSpan s_shortLoadBalanceUpdate = TimeSpan.FromSeconds(1);
+            public static readonly TimeSpan ShortLoadBalanceUpdate = TimeSpan.FromSeconds(1);
 
             /// <summary>A value used to override event processors' ownership expiration time span.</summary>
-            public static readonly TimeSpan s_shortOwnershipExpiration = TimeSpan.FromSeconds(3);
+            public static readonly TimeSpan ShortOwnershipExpiration = TimeSpan.FromSeconds(3);
 
             /// <summary>
             ///   The minimum amount of time to be elapsed between two load balancing verifications.
             /// </summary>
             ///
-            protected override TimeSpan LoadBalanceUpdate => s_shortLoadBalanceUpdate;
+            internal override TimeSpan LoadBalanceUpdate => ShortLoadBalanceUpdate;
 
             /// <summary>
             ///   The minimum amount of time for an ownership to be considered expired without further updates.
             /// </summary>
             ///
-            protected override TimeSpan OwnershipExpiration => s_shortOwnershipExpiration;
+            internal override TimeSpan OwnershipExpiration => ShortOwnershipExpiration;
 
             /// <summary>
             ///   Initializes a new instance of the <see cref="ShortWaitTimeMock"/> class.
             /// </summary>
             ///
-            /// <param name="consumerGroup">The name of the consumer group this event processor is associated with.  Events are read in the context of this group.</param>
-            /// <param name="eventHubClient">The client used to interact with the Azure Event Hubs service.</param>
-            /// <param name="partitionProcessorFactory">Creates a partition processor instance for the associated <see cref="PartitionContext" />.</param>
             /// <param name="partitionManager">Interacts with the storage system with responsibility for creation of checkpoints and for ownership claim.</param>
-            /// <param name="options">The set of options to use for this event processor.</param>
+            /// <param name="consumerGroup">The name of the consumer group this event processor is associated with.  Events are read in the context of this group.</param>
+            /// <param name="fullyQualifiedNamespace">The fully qualified Event Hubs namespace to connect to.  This is likely to be similar to <c>{yournamespace}.servicebus.windows.net</c>.</param>
+            /// <param name="eventHubName">The name of the specific Event Hub to associate the processor with.</param>
+            /// <param name="connectionFactory">A factory used to provide new <see cref="EventHubConnection" /> instances.</param>
+            /// <param name="clientOptions">The set of options to use for this event processor.</param>
             ///
-            public ShortWaitTimeMock(string consumerGroup,
-                                     EventHubClient eventHubClient,
-                                     Func<PartitionContext, PartitionProcessor> partitionProcessorFactory,
-                                     PartitionManager partitionManager,
-                                     EventProcessorOptions options) : base(consumerGroup, eventHubClient, partitionProcessorFactory, partitionManager, options)
+            public ShortWaitTimeMock(PartitionManager partitionManager,
+                                     string consumerGroup,
+                                     string fullyQualifiedNamespace,
+                                     string eventHubName,
+                                     Func<EventHubConnection> connectionFactory,
+                                     EventProcessorClientOptions clientOptions) : base(partitionManager, consumerGroup, fullyQualifiedNamespace, eventHubName, connectionFactory, clientOptions)
             {
             }
         }

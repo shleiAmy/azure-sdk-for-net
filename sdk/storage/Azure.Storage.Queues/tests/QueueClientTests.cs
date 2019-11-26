@@ -10,6 +10,7 @@ using Azure.Storage.Test;
 using Azure.Storage.Queues.Models;
 using Azure.Storage.Queues.Tests;
 using NUnit.Framework;
+using Azure.Core;
 
 namespace Azure.Storage.Queues.Test
 {
@@ -59,6 +60,19 @@ namespace Azure.Storage.Queues.Test
             var builder = new QueueUriBuilder(queue.Uri);
 
             Assert.AreEqual(accountName, builder.AccountName);
+        }
+
+        [Test]
+        public void Ctor_TokenCredential_Http()
+        {
+            // Arrange
+            TokenCredential tokenCredential = GetOAuthCredential(TestConfigHierarchicalNamespace);
+            Uri uri = new Uri(TestConfigPremiumBlob.BlobServiceEndpoint).ToHttp();
+
+            // Act
+            TestHelper.AssertExpectedException(
+                () => new QueueClient(uri, tokenCredential),
+                new ArgumentException("Cannot use TokenCredential without HTTPS."));
         }
 
         [Test]
@@ -198,14 +212,13 @@ namespace Azure.Storage.Queues.Test
         public async Task GetPropertiesAsync()
         {
             // Arrange
-            using (GetNewQueue(out QueueClient queue))
-            {
-                // Act
-                Response<Models.QueueProperties> queueProperties = await queue.GetPropertiesAsync();
+            await using DisposingQueue test = await GetTestQueueAsync();
 
-                // Assert
-                Assert.IsNotNull(queueProperties);
-            }
+            // Act
+            Response<Models.QueueProperties> queueProperties = await test.Queue.GetPropertiesAsync();
+
+            // Assert
+            Assert.IsNotNull(queueProperties);
         }
 
         [Test]
@@ -246,30 +259,28 @@ namespace Azure.Storage.Queues.Test
         {
             // Arrange
             IDictionary<string, string> metadata = BuildMetadata();
-            using (GetNewQueue(out QueueClient queue, metadata: metadata))
-            {
-                // Assert
-                Response<Models.QueueProperties> result = await queue.GetPropertiesAsync();
-                Assert.AreEqual("bar", result.Value.Metadata["foo"]);
-                Assert.AreEqual("data", result.Value.Metadata["meta"]);
-            }
+            await using DisposingQueue test = await GetTestQueueAsync(metadata: metadata);
+
+            // Assert
+            Response<Models.QueueProperties> result = await test.Queue.GetPropertiesAsync();
+            Assert.AreEqual("bar", result.Value.Metadata["foo"]);
+            Assert.AreEqual("data", result.Value.Metadata["meta"]);
         }
 
         [Test]
         public async Task SetMetadataAsync_Metadata()
         {
             // Arrange
-            using (GetNewQueue(out QueueClient queue))
-            {
-                // Act
-                IDictionary<string, string> metadata = BuildMetadata();
-                await queue.SetMetadataAsync(metadata);
+            await using DisposingQueue test = await GetTestQueueAsync();
 
-                // Assert
-                Response<Models.QueueProperties> result = await queue.GetPropertiesAsync();
-                Assert.AreEqual("bar", result.Value.Metadata["foo"]);
-                Assert.AreEqual("data", result.Value.Metadata["meta"]);
-            }
+            // Act
+            IDictionary<string, string> metadata = BuildMetadata();
+            await test.Queue.SetMetadataAsync(metadata);
+
+            // Assert
+            Response<Models.QueueProperties> result = await test.Queue.GetPropertiesAsync();
+            Assert.AreEqual("bar", result.Value.Metadata["foo"]);
+            Assert.AreEqual("data", result.Value.Metadata["meta"]);
         }
 
         // Note that this test intentionally does not call queue.CreateAsync()
@@ -292,23 +303,22 @@ namespace Azure.Storage.Queues.Test
         public async Task GetAccessPolicyAsync()
         {
             // Arrange
-            using (GetNewQueue(out QueueClient queue))
-            {
-                Models.QueueSignedIdentifier[] signedIdentifiers = BuildSignedIdentifiers();
+            await using DisposingQueue test = await GetTestQueueAsync();
 
-                // Act
-                Response setResult = await queue.SetAccessPolicyAsync(signedIdentifiers);
+            Models.QueueSignedIdentifier[] signedIdentifiers = BuildSignedIdentifiers();
 
-                // Assert
-                Response<IEnumerable<Models.QueueSignedIdentifier>> result = await queue.GetAccessPolicyAsync();
-                Models.QueueSignedIdentifier acl = result.Value.First();
+            // Act
+            Response setResult = await test.Queue.SetAccessPolicyAsync(signedIdentifiers);
 
-                Assert.AreEqual(1, result.Value.Count());
-                Assert.AreEqual(signedIdentifiers[0].Id, acl.Id);
-                Assert.AreEqual(signedIdentifiers[0].AccessPolicy.StartsOn, acl.AccessPolicy.StartsOn);
-                Assert.AreEqual(signedIdentifiers[0].AccessPolicy.ExpiresOn, acl.AccessPolicy.ExpiresOn);
-                Assert.AreEqual(signedIdentifiers[0].AccessPolicy.Permissions, acl.AccessPolicy.Permissions);
-            }
+            // Assert
+            Response<IEnumerable<Models.QueueSignedIdentifier>> result = await test.Queue.GetAccessPolicyAsync();
+            Models.QueueSignedIdentifier acl = result.Value.First();
+
+            Assert.AreEqual(1, result.Value.Count());
+            Assert.AreEqual(signedIdentifiers[0].Id, acl.Id);
+            Assert.AreEqual(signedIdentifiers[0].AccessPolicy.StartsOn, acl.AccessPolicy.StartsOn);
+            Assert.AreEqual(signedIdentifiers[0].AccessPolicy.ExpiresOn, acl.AccessPolicy.ExpiresOn);
+            Assert.AreEqual(signedIdentifiers[0].AccessPolicy.Permissions, acl.AccessPolicy.Permissions);
         }
 
         // Note that this test intentionally does not call queue.CreateAsync()
@@ -329,12 +339,11 @@ namespace Azure.Storage.Queues.Test
         [Test]
         public async Task SetAccessPolicyAsync()
         {
-            using (GetNewQueue(out QueueClient queue))
-            {
-                Models.QueueSignedIdentifier[] signedIdentifiers = BuildSignedIdentifiers();
-                Response result = await queue.SetAccessPolicyAsync(signedIdentifiers);
-                Assert.IsFalse(string.IsNullOrWhiteSpace(result.Headers.RequestId));
-            }
+            await using DisposingQueue test = await GetTestQueueAsync();
+
+            Models.QueueSignedIdentifier[] signedIdentifiers = BuildSignedIdentifiers();
+            Response result = await test.Queue.SetAccessPolicyAsync(signedIdentifiers);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(result.Headers.RequestId));
         }
 
         // Note that this test intentionally does not call queue.CreateAsync()
@@ -387,7 +396,6 @@ namespace Azure.Storage.Queues.Test
             {
             }
         }
-
 
         // Note that this test intentionally does not call queue.CreateAsync()
         [Test]
